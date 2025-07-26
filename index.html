@@ -1,71 +1,99 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sugar Rush Slot Game</title>
-    <style>
-        body { margin: 0; overflow: hidden; background: #f8e1f4; }
-        #spinButton { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 20px; font-size: 24px; background: #ff69b4; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Sugar Rush Slot</title>
+  <style>
+    body { margin:0; overflow:hidden; background:#f8e1f4 }
+    #spinButton{
+      position:absolute; bottom:20px;
+      left:50%; transform:translateX(-50%);
+      padding:10px 20px; font-size:24px;
+      background:#ff69b4; color:#fff;
+      border:none; border-radius:8px;
+      cursor:pointer;
+    }
+  </style>
 </head>
 <body>
-    <button id="spinButton">SPIN</button>
-    <script src="https://pixijs.download/release/pixi.min.js"></script>
-    <script>
-        const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xf8e1f4 });
-        document.body.appendChild(app.view);
+  <button id="spinButton" disabled>Loading…</button>
+  <script src="https://pixijs.download/release/pixi.min.js"></script>
+  <script>
+    const app = new PIXI.Application({ width:800, height:600, backgroundColor:0xf8e1f4 });
+    document.body.appendChild(app.view);
 
-        const rows = 3, cols = 5;
-        const reelWidth = 128, reelHeight = 384, symbolHeight = reelHeight/rows;
-        const textures = [];
-        for (let i = 1; i <= 6; i++) textures.push(PIXI.Texture.from(`assets/symbol${i}.png`));
+    // 1) Enqueue all 6 symbols
+    const loader = PIXI.Loader.shared;
+    for (let i=1; i<=6; i++) {
+      loader.add(`sym${i}`, `assets/symbol${i}.png`);
+    }
 
-        const reels = [], reelContainer = new PIXI.Container();
-        reelContainer.x = (app.screen.width - cols*reelWidth)/2;
-        reelContainer.y = 50;
-        app.stage.addChild(reelContainer);
+    // 2) Once they’re loaded, build the reels
+    loader.load((loader, resources) => {
+      const textures = Object.values(resources).map(r => r.texture);
+      setupSlot(textures);
+      document.getElementById('spinButton').disabled = false;
+      document.getElementById('spinButton').textContent = 'SPIN';
+    });
 
-        for (let i = 0; i < cols; i++) {
-            const rc = new PIXI.Container(); rc.x = i*reelWidth; reelContainer.addChild(rc);
-            const symbols = [];
-            for (let j = 0; j < rows + 1; j++) {
-                const sprite = new PIXI.Sprite(textures[Math.floor(Math.random()*textures.length)]);
-                sprite.y = j*symbolHeight; sprite.width = reelWidth; sprite.height = symbolHeight;
-                rc.addChild(sprite); symbols.push(sprite);
-            }
-            reels.push({ container: rc, symbols });
+    function setupSlot(textures) {
+      const rows = 3, cols = 5;
+      const reelW = 128, reelH = 384, symH = reelH/rows;
+      const reels = [];
+      const container = new PIXI.Container();
+      container.x = (app.screen.width - cols*reelW)/2;
+      container.y = 50;
+      app.stage.addChild(container);
+
+      for (let i=0; i<cols; i++) {
+        const rc = new PIXI.Container(); rc.x = i*reelW; container.addChild(rc);
+        const symbols = [];
+        for (let j=0; j<rows+1; j++) {
+          const sprite = new PIXI.Sprite(textures[Math.floor(Math.random()*textures.length)]);
+          sprite.y = j*symH; sprite.width = reelW; sprite.height = symH;
+          rc.addChild(sprite);
+          symbols.push(sprite);
         }
+        reels.push({ container: rc, symbols });
+      }
 
-        document.getElementById('spinButton').addEventListener('click', () => {
-            spinButton.disabled = true;
-            Promise.all(reels.map((r,i) => spinReel(r,i))).then(()=>{
-                checkWin(); spinButton.disabled = false;
-            });
+      document.getElementById('spinButton').addEventListener('click', () => {
+        document.getElementById('spinButton').disabled = true;
+        Promise.all(reels.map((r,i) => spinReel(r, i))).then(()=>{
+          checkWin(reels, rows);
+          document.getElementById('spinButton').disabled = false;
         });
+      });
+    }
 
-        function spinReel(reel, idx) {
-            return new Promise(res => {
-                const dur = 1000 + idx*200, start = performance.now();
-                (function animate(time) {
-                    const t = (time - start)/dur;
-                    reel.symbols.forEach(s => {
-                        s.y += 20;
-                        if (s.y >= reelHeight) {
-                            s.y -= (rows+1)*symbolHeight;
-                            s.texture = textures[Math.floor(Math.random()*textures.length)];
-                        }
-                    });
-                    t < 1 ? requestAnimationFrame(animate) : res();
-                })(start);
-            });
-        }
+    function spinReel(reel, idx) {
+      return new Promise(res => {
+        const duration = 1000 + idx*200;
+        const start = performance.now();
+        (function animate(now) {
+          const t = (now - start)/duration;
+          reel.symbols.forEach(s => {
+            s.y += 20;
+            if (s.y >= reel.symbols.length * (s.height)) {
+              s.y -= (reel.symbols.length)*(s.height);
+              // pick a new random texture
+              s.texture = reel.symbols[0].texture.baseTexture ? 
+                s.texture : // fallback
+                PIXI.Texture.EMPTY;
+            }
+          });
+          t < 1 ? requestAnimationFrame(animate) : res();
+        })(start);
+      });
+    }
 
-        function checkWin() {
-            const mid = Math.floor(rows/2);
-            const results = reels.map(r => r.symbols[mid].texture);
-            if (results.every(t => t === results[0])) alert('Sugar Rush! You won!');
-        }
-    </script>
+    function checkWin(reels, rows) {
+      const mid = Math.floor(rows/2);
+      const results = reels.map(r => r.symbols[mid].texture);
+      if (results.every(t => t === results[0])) {
+        alert('Sugar Rush! You won!');
+      }
+    }
+  </script>
 </body>
 </html>
